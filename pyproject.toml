@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "tasksentinel"
+version = "0.1.0"
+description = "A lightweight CLI tool for monitoring Linux processes"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Gustavo"}
+]
+requires-python = ">=3.10"
+dependencies = [
+    "psutil>=5.9.0"
+]
+
+[project.scripts]
+tasksentinel = "tasksentinel.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["tasksentinel*"]
