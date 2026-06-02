@@ -20,7 +20,10 @@ def run_monitor(stdscr, interval=2):
     previous = {}
 
     while True:
-        key = stdscr.getch()
+        try:
+            key = stdscr.getch()
+        except KeyboardInterrupt:
+            break
 
         if key == ord('q') or key == ord('Q'):
             break
@@ -40,6 +43,8 @@ def run_monitor(stdscr, interval=2):
             selected_row = min(len(processes) - 1, selected_row + 1)
         elif key == curses.KEY_BACKSPACE or key == 127:
             search_query = search_query[:-1]
+        elif key == 27:
+            search_query = ''
         elif key == ord('/'):
             curses.echo()
             curses.curs_set(1)
@@ -48,18 +53,21 @@ def run_monitor(stdscr, interval=2):
             curses.noecho()
             curses.curs_set(0)
 
-        processes = collect_processes(sort_by=sort_by)
+        try:
+            processes = collect_processes(sort_by=sort_by)
 
-        if search_query:
-            q = search_query.lower()
-            processes = [p for p in processes if q in p.name.lower() or q in str(p.pid)]
+            if search_query:
+                q = search_query.lower()
+                processes = [p for p in processes if q in p.name.lower() or q in str(p.pid)]
 
-        if show_help:
-            _draw_help(stdscr)
-        else:
-            _draw_dashboard(stdscr, processes, selected_row, sort_by, search_query, interval, previous)
+            if show_help:
+                _draw_help(stdscr)
+            else:
+                _draw_dashboard(stdscr, processes, selected_row, sort_by, search_query, interval, previous)
 
-        previous = {p.pid: p for p in processes}
+            previous = {p.pid: p for p in processes}
+        except KeyboardInterrupt:
+            break
 
 
 def _format_rss(rss):
@@ -84,7 +92,7 @@ def _draw_dashboard(stdscr, processes, selected_row, sort_by, search_query, inte
     stdscr.attroff(curses.A_REVERSE)
 
     if search_query:
-        stdscr.addstr(1, 0, f' Search: {search_query}', curses.A_BOLD)
+        stdscr.addstr(1, 0, f' Search: {search_query}   [Esc] clear', curses.A_BOLD)
     stdscr.addstr(1 if not search_query else 2, 0, '-' * cols)
 
     table_header = f'{"PID":>7} {"USER":<8} {"CPU%":>6} {"MEM%":>6} {"RSS":>7} {"THR":>4} {"STATUS":<6} NAME'
@@ -127,7 +135,6 @@ def _draw_dashboard(stdscr, processes, selected_row, sort_by, search_query, inte
     if not processes:
         stdscr.addstr(line, 0, ' No processes found', curses.A_DIM)
 
-    # Bottom bar
     stdscr.attron(curses.A_REVERSE)
     elapsed = time.strftime('%H:%M:%S', time.gmtime(time.time()))
     sort_indicator = {'cpu': 'CPU', 'mem': 'MEM', 'pid': 'PID', 'name': 'NAME'}.get(sort_by, 'CPU')
@@ -151,6 +158,7 @@ def _draw_help(stdscr):
         '  p             Sort by PID',
         '  n             Sort by Name',
         '  /             Search by name or PID',
+        '  Esc           Clear search / exit',
         '  ↑/k ↓/j      Navigate process list',
         '  h / H         Toggle this help',
         '',

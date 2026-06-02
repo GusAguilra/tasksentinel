@@ -37,31 +37,59 @@ def cmd_list(args):
 
 
 def cmd_exec(args):
-    command = args.command
+    command = [a for a in args.cmd if a != '--']
     if not command:
         print('error: no command specified')
         sys.exit(1)
 
-    print(f'[tasksentinel] Taking snapshot before: {command}')
-    before_path, before_count = snap_save(name=f'before_{int(time.time())}')
+    cmd_str = ' '.join(command)
+    before_path, _ = snap_save(name=f'before_{int(time.time())}')
 
-    print(f'[tasksentinel] Running: {" ".join(command)}')
+    print(f'[tasksentinel] Running: {cmd_str}')
     print('─' * 60)
+
     start = time.time()
-    result = subprocess.run(command)
-    elapsed = time.time() - start
-    print('─' * 60)
-    print(f'[tasksentinel] Finished in {elapsed:.2f}s (exit code: {result.returncode})')
-
-    print(f'[tasksentinel] Taking snapshot after...')
-    after_path, after_count = snap_save(name=f'after_{int(time.time())}')
+    try:
+        proc = subprocess.Popen(command)
+        time.sleep(1)
+        during_path, _ = snap_save(name=f'during_{int(time.time())}')
+        proc.wait()
+        elapsed = time.time() - start
+        after_path, _ = snap_save(name=f'after_{int(time.time())}')
+        print('─' * 60)
+        print(f'[tasksentinel] Finished in {elapsed:.2f}s (exit code: {proc.returncode})')
+    except FileNotFoundError:
+        print('─' * 60)
+        print(f'[tasksentinel] Command not found: {command[0]}')
+        return
 
     before = snap_load(before_path)
+    during = snap_load(during_path)
     after = snap_load(after_path)
 
-    if before and after:
-        diff = diff_snapshots(before, after)
-        _print_diff(diff)
+    if before and during:
+        diff_before_during = diff_snapshots(before, during)
+        new = diff_before_during['new']
+        if new:
+            print(f'\n  ▶ New processes spawned ({len(new)})')
+            for p in new[:10]:
+                print(f'    {p["pid"]:>7}  {p["name"]:<25}  CPU {p.get("cpu_percent",0):.1f}%  MEM {p.get("memory_percent",0):.1f}%')
+
+    if during and after:
+        diff_during_after = diff_snapshots(during, after)
+        terminated = diff_during_after['terminated']
+        if terminated:
+            print(f'\n  ◇ Terminated processes ({len(terminated)})')
+            for p in terminated[:10]:
+                print(f'    {p["pid"]:>7}  {p["name"]:<25}  was CPU {p.get("cpu_percent",0):.1f}%')
+
+        changed = diff_during_after['changed']
+        if changed:
+            print(f'\n  ◆ Changed processes ({len(changed)})')
+            for p in changed[:5]:
+                print(f'    {p["pid"]:>7}  {p["name"]:<25}  CPU {p["cpu_diff"]:+.1f}%  MEM {p["mem_diff"]:+.1f}%')
+
+    print()
 
 
 def cmd_snap(args):
@@ -94,6 +122,16 @@ def cmd_snap(args):
             print(json.dumps(diff, indent=2, default=str))
         else:
             _print_diff(diff)
+
+    elif args.action == 'delete':
+        from .snapshot import delete_snapshots
+        deleted = delete_snapshots(ids=args.ids, all_flag=args.all, older_than=args.older_than)
+        if deleted:
+            print(f'Deleted {len(deleted)} snapshot(s):')
+            for d in deleted:
+                print(f'  ✕ {d}')
+        else:
+            print('No snapshots deleted.')
 
 
 def cmd_watch(args):
@@ -162,7 +200,7 @@ def main():
 
     # exec
     exec_parser = subparsers.add_parser('exec', help='Run a command with before/after snapshots')
-    exec_parser.add_argument('command', nargs=argparse.REMAINDER, help='Command to run')
+    exec_parser.add_argument('cmd', nargs='*', help='Command to run (e.g. exec -- sleep 3 or exec sleep 3)')
 
     # snap
     snap_parser = subparsers.add_parser('snap', help='Manage snapshots')
@@ -173,6 +211,10 @@ def main():
     snap_diff_p = snap_sub.add_parser('diff', help='Diff two snapshots')
     snap_diff_p.add_argument('ids', nargs=2, help='Snapshot IDs or names')
     snap_diff_p.add_argument('--json', action='store_true', help='Output as JSON')
+    snap_delete_p = snap_sub.add_parser('delete', help='Delete snapshots')
+    snap_delete_p.add_argument('ids', nargs='*', help='Snapshot IDs or names to delete')
+    snap_delete_p.add_argument('--all', action='store_true', help='Delete all snapshots')
+    snap_delete_p.add_argument('--older-than', type=int, default=0, help='Delete snapshots older than N days')
 
     # watch
     watch_parser = subparsers.add_parser('watch', help='Live process monitor (curses)')
@@ -193,4 +235,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(0)

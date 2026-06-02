@@ -73,8 +73,10 @@ def collect_processes(sort_by='cpu', limit=None):
                 cmdline=proc.cmdline() or [],
             )
             procs.append(pinfo)
-        except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
+        except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError, OSError):
             pass
+        except KeyboardInterrupt:
+            break
 
     _sort_processes(procs, sort_by)
 
